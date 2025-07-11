@@ -7,7 +7,8 @@ from utils.group_generator import assign_groups_by_category
 from utils.excel_exporter import generate_excel_file
 from utils.name_matcher import confirm_similar_names
 from utils.constants import C_CATEGORIA
-from ui_helpers import display_loaded_data
+from utils.ui_helpers import display_loaded_data, select_courts_and_blocked_slots
+
 
 st.set_page_config(page_title="Generador de quadres", layout="wide")
 
@@ -33,6 +34,9 @@ if uploaded_file:
 
          # Step 2: Select available courts
          st.header("2. Selecciona les pistes disponibles")
+         num_courts, blocked_slots = select_courts_and_blocked_slots()
+         st.session_state["num_courts"] = num_courts
+         st.session_state["blocked_slots"] = blocked_slots
 
          # Step 3: Select number of groups per category
          st.header("3. Tria el nombre de grups per categoria")

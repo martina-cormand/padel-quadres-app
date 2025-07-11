@@ -8,6 +8,11 @@ def is_day_column(col_name):
    normalized = re.sub(r"\s+", "", col_name.lower())
    return any(day in normalized for day in DAYS_OF_WEEK)
 
+def is_not_final_phase(series):
+   # Ignore "FASE FINAL"
+   cleaned = series.dropna().astype(str).str.strip().str.lower()
+   return not cleaned.eq("fase final").all()
+
 def load_player_data(uploaded_file):
    try:
       df_full = pd.read_excel(uploaded_file, header=0)
@@ -15,11 +20,14 @@ def load_player_data(uploaded_file):
       # Drop completely empty rows early
       df_full = df_full.dropna(how='all')
 
-      # Filter columns: REQUIRED_COLUMNS + columns that contain days of the week
-      filtered_columns = [
-         col for col in df_full.columns
-         if col in REQUIRED_COLUMNS or is_day_column(col)
-      ]
+      # Filter columns: REQUIRED_COLUMNS + columns that contain days of the week - columns that are "FASE FINAL"
+      filtered_columns = []
+      for col in df_full.columns:
+            if col in REQUIRED_COLUMNS:
+               filtered_columns.append(col)
+            elif is_day_column(col) and is_not_final_phase(df_full[col]):
+               filtered_columns.append(col)
+
       df = df_full[filtered_columns].copy()
 
       # Check if the required columns are present
