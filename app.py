@@ -3,12 +3,12 @@ import pandas as pd
 from io import BytesIO
 import random
 from utils.file_upload import load_player_data
-from utils.group_generator import assign_groups_by_category
+from utils.group_generator import schedule_matches
 from utils.excel_exporter import generate_excel_file
 from utils.name_matcher import confirm_similar_names
 from utils.constants import C_CATEGORIA
-from utils.ui_helpers import display_loaded_data, select_courts_and_blocked_slots
-
+from utils.ui_helpers import display_loaded_data, select_court_availability, select_number_of_pairs_per_group
+from utils.availability import build_player_availability
 
 st.set_page_config(page_title="Generador de quadres", layout="wide")
 
@@ -32,44 +32,45 @@ if uploaded_file:
       else:
          display_loaded_data(df, df_waitlist)
 
-         # Step 2: Select available courts
-         st.header("2. Selecciona les pistes disponibles")
-         num_courts, blocked_slots = select_courts_and_blocked_slots()
-         st.session_state["num_courts"] = num_courts
-         st.session_state["blocked_slots"] = blocked_slots
+         # Step 2: Select number of pairs per group for each category
+         st.header("2. Tria la mida dels grups per categoria")
+         category_groups, error = select_number_of_pairs_per_group(df)
 
-         # Step 3: Select number of groups per category
-         st.header("3. Tria el nombre de grups per categoria")
+         if error:
+            st.error(error)
+         else:
+            # Step 3: Select available courts
+            st.header("3. Disponibilitat de pistes per dia i hora")
+            max_pistes, pistes_per_day_hour = select_court_availability(df)
+            st.session_state["max_pistes"] = max_pistes
+            st.session_state["pistes_per_day_hour"] = pistes_per_day_hour
 
-         col_left, col_right = st.columns([1, 1])
+            # Step 4: Generate groups
+            if st.button("Genera els quadres"):
+               with st.spinner("Generant quadres..."):
+                  court_availability = st.session_state["pistes_per_day_hour"]
+                  player_availability = build_player_availability(df)
+                  scheduled_matches = schedule_matches(df, category_groups, court_availability, player_availability)
 
-         with col_left:
-            categories = df[C_CATEGORIA].unique()
-            category_groups = {}
+                  if not scheduled_matches:
+                     st.warning("No s'han pogut generar partits amb la configuració actual.")
+                  else:
+                     st.success("Quadres generats correctament!")
 
-            for cat in categories:
-               count = df[df[C_CATEGORIA] == cat].shape[0]
-               num = st.number_input(
-                     f"Nombre de grups per a la categoria {cat} ({count} parelles)",
-                     min_value=1,
-                     max_value=count,
-                     value=min(4, count),
-                     key=f"num_groups_{cat}"
-               )
-               category_groups[cat] = int(num)
+                     # Mostrar els quadres
+                     st.subheader("Quadres generats")
+                     match_data = [{
+                           "Categoria": match.category,
+                           "Grup": match.group_id,
+                           "Jugador/a 1": match.pair1[0],
+                           "Jugador/a 2": match.pair1[1],
+                           "Contrincant 1": match.pair2[0],
+                           "Contrincant 2": match.pair2[1],
+                           "Dia": match.day,
+                           "Hora": match.hour,
+                     } for match in scheduled_matches]
 
-         # Step 4: Generate groups
-         st.header("4. Quadres generats")
-         all_groups_df = assign_groups_by_category(df, category_groups, st)
-
-         # Step 5: Export and download
-         st.header("5. Descarrega els quadres generats")
-         excel_data = generate_excel_file(all_groups_df)
-         st.download_button(
-               label="📥 Descarrega els quadres com a Excel",
-               data=excel_data,
-               file_name="quadres_padel.xlsx",
-               mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-         )
+                     df_matches = pd.DataFrame(match_data)
+                     st.dataframe(df_matches)
    except Exception as e:
       st.error(f"Error reading Excel file: {e}")

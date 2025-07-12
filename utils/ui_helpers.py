@@ -1,6 +1,12 @@
+import pandas as pd
 import streamlit as st
+import re
+import math
 from utils.constants import C_CATEGORIA
 
+DAYS_OF_WEEK = ["dilluns", "dimarts", "dimecres", "dijous", "divendres", "dissabte", "diumenge"]
+
+# Display player data
 def display_loaded_data(df, df_waitlist):
    st.success(f"{len(df)} parelles llegides correctament.")
    categories = df[C_CATEGORIA].unique()
@@ -15,59 +21,120 @@ def display_loaded_data(df, df_waitlist):
       with st.expander("👀 Veure llista d'espera"):
          st.dataframe(df_waitlist)
 
+def is_day_column(col_name):
+   normalized = re.sub(r"\s+", "", col_name.lower())
+   return any(day in normalized for day in DAYS_OF_WEEK)
 
-def select_courts_and_blocked_slots():
-   """
-   Muestra los inputs de selección de pistas y franjas horarias bloqueadas,
-   diferenciando entre fin de semana y entre semana.
-   
-   Retorna:
-      num_courts (int): número total de pistas
-      blocked_slots (dict): diccionario con bloqueos por pista
-   """
-   st.header("2. Selecciona les pistes disponibles")
+def get_default_hours_for_day(day_name):
+   day_name = day_name.lower()
+   if "dissabte" in day_name or "diumenge" in day_name:
+      return [f"{h:02d}:00" for h in range(9, 22)]  # 09:00 - 21:00
+   else:
+      return [f"{h:02d}:00" for h in range(16, 23)] # 16:00 - 22:00
 
-   # Número total de pistas
-   num_courts = st.number_input(
-      "Nombre total de pistes disponibles",
-      min_value=1,
-      max_value=20,
-      value=4,
-      step=1
+# Select court availability for each day and hour
+def select_court_availability(df):
+   max_pistes = st.number_input("Nombre màxim de pistes disponibles al recinte", min_value=1, max_value=20, value=6)
+
+   day_columns = [col for col in df.columns if is_day_column(col)]
+
+   # Get all unique hours across all days
+   all_hours = sorted({hour for day in day_columns for hour in get_default_hours_for_day(day)})
+
+   # Create a DataFrame with default values
+   data = {}
+   for hour in all_hours:
+      row = {}
+      for day in day_columns:
+         default_hours = get_default_hours_for_day(day)
+         row[day] = max_pistes if hour in default_hours else 0
+      data[hour] = row
+
+   df_editor = pd.DataFrame.from_dict(data, orient="index")
+   df_editor.index.name = "Hora"
+
+   st.markdown("Introdueix el nombre de pistes disponibles per a cada franja horària:")
+
+   row_height = 35
+   total_height = row_height * (len(df_editor)+1) + 2
+
+   edited_df = st.data_editor(
+      df_editor,
+      use_container_width=True,
+      num_rows="fixed",
+      height=total_height
    )
 
-   st.subheader("Bloqueig de pistes en hores determinades")
+   # Convert edited DataFrame to the required format
+   pistes_per_day_hour = {
+      day: {
+         hour: int(edited_df.loc[hour, day])
+         for hour in edited_df.index
+         if day in edited_df.columns
+      }
+      for day in edited_df.columns
+   }
 
-   # Horarios disponibles
-   time_slots_weekend = [f"{h:02d}:00" for h in range(9, 22)]      # 9:00 - 21:00
-   time_slots_weekday = [f"{h:02d}:00" for h in range(16, 23)]     # 16:00 - 22:00
+   return max_pistes, pistes_per_day_hour
 
-   blocked_slots = {}
+# Select number of pairs per group for each category
+def select_number_of_pairs_per_group(df):
+   category_settings = {}
+   categories = df[C_CATEGORIA].unique()
+   error = None
 
-   for i in range(num_courts):
-      court_name = f"Pista {i+1}"
-      st.markdown(f"**{court_name}**")
+   for cat in categories:
+      count = df[df[C_CATEGORIA] == cat].shape[0]
+      col1, col2 = st.columns([2, 3])
 
-      col1, col2 = st.columns([1, 2])
+      # Display category header and input for pairs per group
       with col1:
-         days = st.radio(
-               f"Selecciona el tipus de dia per bloquejar la {court_name}",
-               options=["Cap de setmana", "Entre setmana"],
-               key=f"day_type_{i}"
-         )
+         with st.container():
+            st.markdown(
+               f"""<div style="padding-top: 6px; padding-bottom: 2px;">
+                  <strong>{cat}</strong> — {count} parelles
+               </div>""",
+               unsafe_allow_html=True
+            )
+            parelles_per_grup = st.number_input(
+               "Parelles per grup:",
+               min_value=2,
+               max_value=count,
+               value=4,
+               step=1,
+               key=f"ppg_{cat}"
+            )
 
+      num_grups = count // parelles_per_grup
+      sobrants = count % parelles_per_grup
+
+      # Display summary of groups and surplus pairs
       with col2:
-         if days == "Cap de setmana":
-               time_options = time_slots_weekend
-         else:
-               time_options = time_slots_weekday
+         with st.container():
+            if sobrants > 0:
+               resumen = f"""<span style="color:#c20000;">
+                  {num_grups} grup(s) de {parelles_per_grup} parelles
+                  <span style="color:#c20000;"> + {sobrants} parella(es) sobrants</span>
+               </span>"""
+               error = (
+                  "⚠️ No es pot continuar: hi ha categories amb parelles sobrants. Revisa les dades d'entrada o ajusta els nombres de parelles per grup."
+               )
+            else:
+               resumen = f"""<span style="color:#1e8c3a; ">
+                  {num_grups} grup(s) de {parelles_per_grup} parelles
+               </span>"""
+            st.markdown(
+               f"""<div style="padding-top: 68px; font-size: 16px;"><strong>{resumen}</strong></div>""",
+               unsafe_allow_html=True
+            )
 
-         blocked = st.multiselect(
-               f"Selecciona les hores en què la {court_name} estarà bloquejada",
-               time_options,
-               key=f"blocked_{i}"
-         )
-      
-      blocked_slots[court_name] = blocked
+      st.markdown("""<div style="margin-top: 10px; margin-bottom: 10px; border-bottom: 1px solid #eee;"></div>""", unsafe_allow_html=True)
 
-   return num_courts, blocked_slots
+      # Store settings for this category
+      category_settings[cat] = {
+         'parelles_per_grup': parelles_per_grup,
+         'num_grups': num_grups,
+         'sobrants': sobrants
+      }
+
+   return category_settings, error
