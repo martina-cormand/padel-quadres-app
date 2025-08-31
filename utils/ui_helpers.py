@@ -138,3 +138,14 @@ def select_number_of_pairs_per_group(df):
       }
 
    return category_settings, error
+
+def show_remaining_court_availability(court_availability):
+   st.subheader("📊 Disponibilitat restant de pistes per dia i hora")
+   df_remaining = pd.DataFrame(court_availability).fillna(0).astype(int)
+   # Ordena les hores correctament si són strings
+   try:
+      df_remaining.index = sorted(df_remaining.index, key=lambda x: int(str(x).split(":")[0]))
+   except:
+      df_remaining = df_remaining.sort_index()
+
+   st.dataframe(df_remaining, use_container_width=True)

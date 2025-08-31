@@ -7,7 +7,7 @@ from utils.group_generator import schedule_matches
 from utils.excel_exporter import generate_excel_file
 from utils.name_matcher import confirm_similar_names
 from utils.constants import C_CATEGORIA
-from utils.ui_helpers import display_loaded_data, select_court_availability, select_number_of_pairs_per_group
+from utils.ui_helpers import display_loaded_data, select_court_availability, select_number_of_pairs_per_group, show_remaining_court_availability
 from utils.availability import build_player_availability
 
 st.set_page_config(page_title="Generador de quadres", layout="wide")
@@ -46,6 +46,7 @@ if uploaded_file:
             st.session_state["pistes_per_day_hour"] = pistes_per_day_hour
 
             # Step 4: Generate groups
+            st.header("3. Genera els quadres de partits")
             if st.button("Genera els quadres"):
                with st.spinner("Generant quadres..."):
                   court_availability = st.session_state["pistes_per_day_hour"]
@@ -72,5 +73,21 @@ if uploaded_file:
 
                      df_matches = pd.DataFrame(match_data)
                      st.dataframe(df_matches)
+
+                     # show_remaining_court_availability(court_availability)
+
+                     # Botó per descarregar l'Excel
+                     try:
+                        excel_bytes = generate_excel_file(scheduled_matches)
+                        st.download_button(
+                           label="📥 Descarrega l'Excel dels quadres",
+                           data=excel_bytes,
+                           file_name="quadres_atres_padel.xlsx",
+                           mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                           use_container_width=True
+                        )
+                     except Exception as e:
+                        st.warning(f"No s'ha pogut generar l'Excel: {e}")
+                     
    except Exception as e:
       st.error(f"Error reading Excel file: {e}")
